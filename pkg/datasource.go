@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
@@ -59,9 +60,6 @@ func newDatasource() datasource.ServeOpts {
 		CheckHealthHandler: ds,
 	}
 }
-
-
-
 
 // VerticaDatasource is an datasource used to create
 // new datasource plugins with a backend.
@@ -85,7 +83,6 @@ func (v *VerticaDatasource) GetVerticaDb(pluginContext backend.PluginContext) (*
 	}
 
 }
-
 
 type configArgs struct {
 	User                   string `json:"user"`
@@ -188,7 +185,7 @@ type instanceSettings struct {
 
 // Create new datasource.
 func newDataSourceInstance(_ context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-// func newDataSourceInstance(setting backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+	// func newDataSourceInstance(setting backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 	var config configArgs
 	secret := settings.DecryptedSecureJSONData["password"]
 
@@ -213,8 +210,6 @@ func newDataSourceInstance(_ context.Context, settings backend.DataSourceInstanc
 	}, nil
 
 }
-
-
 
 // CheckHealth handles health checks sent from Grafana to the plugin.
 // The main use case for these health checks is the test button on the
