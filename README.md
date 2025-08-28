@@ -198,3 +198,10 @@ For the plugin to load, add the following configuration parameter to the  `/etc/
        ```
 4. Restart the Grafana server.
 
+
+# Activate go
+```
+go install github.com/magefile/mage@latest
+
+go run github.com/magefile/mage@latest -v
+```
