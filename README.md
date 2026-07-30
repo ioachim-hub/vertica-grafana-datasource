@@ -2,7 +2,9 @@
 
 If you plan to modify the source code and build your own version of the plugin, follow the steps in this section to set up the development environment.
 
-Before you begin, if you modify the source code and rebuild the plugin, it is no longer signed. The signature is based on a hash of the distribution, so you will have to run it as unsigned. 
+This fork's locally built and packaged artifacts are unsigned. The signature is
+based on a hash of the distribution, so Grafana must be configured to allow this
+plugin to load unsigned.
 
 For the plugin to load, add the following configuration parameter to the  `/etc/grafana/grafana.ini` file in the [plugins] section:
 
@@ -10,20 +12,21 @@ For the plugin to load, add the following configuration parameter to the  `/etc/
 
 ![Allow Unsigned Plugin](https://raw.githubusercontent.com/vertica/vertica-grafana-datasource/main/src/img/allow-unsigned-plugin.png)
 
-### Prerequisites 
+### Prerequisites
 * [Grafana](https://grafana.com/docs/grafana/latest/installation/) (version 10.x)
-* [Vertica](https://www.vertica.com/download/vertica/) 
-* [NodeJS](https://nodejs.org/en/download/package-manager/) (version 18 or higher) (Package Manager: [yarn](https://classic.yarnpkg.com/en/docs/install/#windows-stable)) 
-* [Go](https://golang.org/doc/install) 
+* [Vertica](https://www.vertica.com/download/vertica/)
+* [NodeJS](https://nodejs.org/en/download/package-manager/) 20
+* [Yarn Classic](https://classic.yarnpkg.com/en/docs/install/) 1.22.19
+* [Go](https://golang.org/doc/install) 1.26.5
 * [Mage](https://magefile.org/)
 
-**Note:** This plugin is tested in **Linux(Ubuntu)** with the following  versions:
+**Note:** This plugin is tested on **Linux (Ubuntu)** with the following versions:
 
 * Grafana - v13.0.0
 * NodeJS -  v20.20.2
 * Yarn - v1.22.19
 * Npm - v10.8.0
-* Go - v1.26.3
+* Go - v1.26.5
 * React - v19
 
  
@@ -46,17 +49,17 @@ For the plugin to load, add the following configuration parameter to the  `/etc/
        ```bash 
           yarn build 
        ``` 
-   3. Build backend plugin binaries for Linux, Windows, and Darwin: 
+   3. Build the Linux AMD64 backend plugin binary used by this fork's release:
    
        ```bash
-          mage -v
+          go run github.com/magefile/mage@v1.17.2 -v build:linux
        ```
+   4. Package the reproducible unsigned Linux AMD64 release:
+
+       ```bash
+          rtk bash scripts/package-release.sh v3.2.2
+       ```
+
+      The ZIP is written to
+      `release/vertica-grafana-datasource-3.2.2.zip`.
 4. Restart the Grafana server.
-
-
-# Activate go
-```
-go install github.com/magefile/mage@latest
-
-go run github.com/magefile/mage@latest -v
-```

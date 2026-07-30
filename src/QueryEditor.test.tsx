@@ -1,3 +1,4 @@
+/* eslint-disable react/react-in-jsx-scope */
 import { ReactNode } from 'react';
 import { MyQuery } from './types';
 // import { DataSource } from './datasource';
