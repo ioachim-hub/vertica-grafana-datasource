@@ -3,24 +3,23 @@ name: Go Build
 on:
   push:
     branches:
-     - main
-  
+      - main
 
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
     steps:
-    - name: Set up Go 1.x
-      uses: actions/setup-go@v2
-      with:
-        go-version: ^1.21
-      id: go
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v2
-    - name: Format
-      run: gofmt ./pkg
-    - name: Go Vet
-      run: go vet ./pkg
-    - name: Build
-      run: go build -o ./pkg ./pkg 
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check formatting
+        run: test -z "$(gofmt -l pkg/*.go Magefile.go)"
+      - name: Vet
+        run: go vet ./...
+      - name: Build Linux backend
+        run: go run github.com/magefile/mage@v1.17.2 -v

@@ -1,0 +1,49 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  go:
+    name: Go vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Scan dependencies
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  frontend:
+    name: Frontend dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+      - name: Audit production dependencies
+        shell: bash
+        run: |
+          audit_status=0
+          yarn audit --groups dependencies --level high || audit_status=$?
+
+          # Yarn Classic returns a severity bitmask, even for vulnerabilities
+          # hidden by --level. Fail only when the high or critical bits are set.
+          if ((audit_status & 24)); then
+            exit "$audit_status"
+          fi
