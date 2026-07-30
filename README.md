@@ -17,7 +17,7 @@ For the plugin to load, add the following configuration parameter to the  `/etc/
 * [Vertica](https://www.vertica.com/download/vertica/)
 * [NodeJS](https://nodejs.org/en/download/package-manager/) 20
 * [Yarn Classic](https://classic.yarnpkg.com/en/docs/install/) 1.22.19
-* [Go](https://golang.org/doc/install) 1.26.3
+* [Go](https://golang.org/doc/install) 1.26.5
 * [Mage](https://magefile.org/)
 
 **Note:** This plugin is tested on **Linux (Ubuntu)** with the following versions:
@@ -26,7 +26,7 @@ For the plugin to load, add the following configuration parameter to the  `/etc/
 * NodeJS -  v20.20.2
 * Yarn - v1.22.19
 * Npm - v10.8.0
-* Go - v1.26.3
+* Go - v1.26.5
 * React - v19
 
  

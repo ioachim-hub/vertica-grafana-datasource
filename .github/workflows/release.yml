@@ -26,6 +26,11 @@ jobs:
           node-version: 20
           cache: yarn
 
+      - name: Activate Yarn Classic
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.19 --activate
+
       - name: Build release archive
         run: bash scripts/package-release.sh "${GITHUB_REF_NAME}"
 

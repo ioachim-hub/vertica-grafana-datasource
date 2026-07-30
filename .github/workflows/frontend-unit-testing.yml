@@ -17,6 +17,10 @@ jobs:
         with:
           node-version: 20
           cache: yarn
+      - name: Activate Yarn Classic
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.19 --activate
       - run: yarn install --frozen-lockfile
       - run: yarn lint
       - run: yarn typecheck

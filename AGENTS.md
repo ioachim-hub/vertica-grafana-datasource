@@ -35,6 +35,20 @@ Prefix shell commands with `rtk` as required by
   direct-owner upgrade was insufficient.
 - Do not hide audit findings by changing audit thresholds.
 
+### Yarn Resolution Register
+
+| Resolution | Owner and rationale |
+| --- | --- |
+| `**/@grafana/i18n/**/brace-expansion` | Fixes the production `brace-expansion` advisory path owned by Grafana i18n; the aligned Grafana 13.1.1 packages do not select the fixed version. |
+| `**/@grafana/runtime/immutable` | Fixes the production `immutable` advisory path owned by Grafana runtime while leaving unrelated major versions unchanged. |
+| `**/@grafana/ui/immutable` | Fixes the production `immutable` advisory path owned by Grafana UI while leaving Sass on its compatible Immutable 4 release. |
+| `**/slate/lodash` | Fixes the production `lodash` advisory path owned by Grafana UI's Slate dependency without overriding unrelated owners. |
+| `**/slate-react/lodash` | Fixes the production `lodash` advisory path owned by Grafana UI's Slate React dependency without changing the development-only Grafana e2e tree. |
+| `flatted` | Inherited from upstream `v3.2.1`; retains upstream's constraint for the ESLint/flat-cache development dependency path. |
+| `js-cookie` | Inherited from upstream `v3.2.1`; retains upstream's constraint for the `react-use` dependency path. |
+| `path-to-regexp` | Inherited from upstream `v3.2.1`; retains upstream's constraint for Grafana UI's React Router 5 compatibility path. |
+| `protobufjs` | Inherited from upstream `v3.2.1` as a compatibility guard; no `protobufjs` package is currently selected in the installed dependency graph. |
+
 ## Validation
 
 Backend:

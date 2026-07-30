@@ -80,7 +80,10 @@ readonly release_archive="${release_dir}/${plugin_id}-${version}.zip"
 
 cp -R dist "${staged_plugin}"
 
-# Normalize archive metadata to match the deterministic backend build timestamp.
+# Normalize archive modes and metadata independently of the caller's umask.
+find "${staged_plugin}" -type d -exec chmod 0755 {} +
+find "${staged_plugin}" -type f -exec chmod 0644 {} +
+chmod 0755 "${staged_plugin}/$(basename "${backend_binary}")"
 find "${staged_plugin}" -exec touch -h -d "@${source_date_epoch}" {} +
 
 (
