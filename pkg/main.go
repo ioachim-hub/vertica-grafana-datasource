@@ -45,7 +45,7 @@ func main() {
 
 	// Log any error if we could not start the plugin.
 	if err != nil {
-		log.DefaultLogger.Error("Error serving Vertica plugin: " + err.Error())
+		log.DefaultLogger.Error("Error serving Vertica plugin", "error", safeText(err.Error()))
 	}
 
 }

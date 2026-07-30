@@ -36,16 +36,19 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"time"
+	"unicode/utf8"
+
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	vertica "github.com/vertica/vertica-sql-go"
 	"golang.org/x/net/proxy"
-	"net"
-	"net/http"
-	"time"
 )
 
 func newDatasource() datasource.ServeOpts {
@@ -97,16 +100,16 @@ type VerticaDatasource struct {
 func (v *VerticaDatasource) GetVerticaDb(pluginContext backend.PluginContext) (*sql.DB, error) {
 	instance, err := v.im.Get(context.Background(), pluginContext)
 	if err != nil {
-		log.DefaultLogger.Error("getVerticaDb: %s", err)
-		return nil, err
+		log.DefaultLogger.Error("getVerticaDb", "error", safeText(err.Error()))
+		return nil, safeError(err)
 	}
 	if instanceSetting, ok := instance.(*instanceSettings); ok {
 		return instanceSetting.Db, nil
-	} else {
-		log.DefaultLogger.Error("getVerticaDb: %s", err)
-		return nil, err
 	}
 
+	err = errors.New("unexpected datasource instance type")
+	log.DefaultLogger.Error("getVerticaDb", "error", err.Error())
+	return nil, safeError(err)
 }
 
 type configArgs struct {
@@ -173,7 +176,7 @@ type sqlColumn struct {
 // contains Frames ([]*Frame).
 func (v *VerticaDatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
 
-	log.DefaultLogger.Debug("Inside datasource.QueryData Function", "Query request: ", req)
+	log.DefaultLogger.Debug("Inside datasource.QueryData Function", "queryCount", len(req.Queries))
 
 	// create response struct
 	response := backend.NewQueryDataResponse()
@@ -181,13 +184,13 @@ func (v *VerticaDatasource) QueryData(ctx context.Context, req *backend.QueryDat
 	// Vertica db conntection
 	connDB, err := v.GetVerticaDb(req.PluginContext)
 	if err != nil {
-		log.DefaultLogger.Error("Error while connecting to the Vertica Database: " + err.Error())
-		return response, err
+		log.DefaultLogger.Error("Error while connecting to the Vertica Database", "error", safeText(err.Error()))
+		return response, safeError(err)
 	}
 
 	if err = connDB.PingContext(context.Background()); err != nil {
-		log.DefaultLogger.Error("Error while connecting to the Vertica Database: " + err.Error())
-		return response, err
+		log.DefaultLogger.Error("Error while connecting to the Vertica Database", "error", safeText(err.Error()))
+		return response, safeError(err)
 	}
 	// https://golang.org/pkg/database/sql/#DBStats
 	log.DefaultLogger.Debug(fmt.Sprintf("%s connection stats open connections =%d, InUse = %d, Ideal = %d", req.PluginContext.DataSourceInstanceSettings.Name, connDB.Stats().MaxOpenConnections, connDB.Stats().InUse, connDB.Stats().Idle))
@@ -195,6 +198,7 @@ func (v *VerticaDatasource) QueryData(ctx context.Context, req *backend.QueryDat
 	// loop over queries and execute them individually.
 	for _, q := range req.Queries {
 		res := v.query(ctx, q, connDB)
+		res.Error = safeError(res.Error)
 
 		// save the response in a hashmap
 		// based on with RefID as identifier
@@ -216,16 +220,26 @@ func newDataSourceInstance(ctx context.Context, settings backend.DataSourceInsta
 	var config configArgs
 	secret := settings.DecryptedSecureJSONData["password"]
 	OauthToken := settings.DecryptedSecureJSONData["OauthToken"]
+	if !utf8.ValidString(secret) {
+		return nil, errors.New(
+			"datasource password contains invalid UTF-8; re-save the credentials or restore Grafana with the original encryption key",
+		)
+	}
+	if !utf8.ValidString(OauthToken) {
+		return nil, errors.New(
+			"datasource OAuth token contains invalid UTF-8; re-save the credentials or restore Grafana with the original encryption key",
+		)
+	}
 
 	err := json.Unmarshal(settings.JSONData, &config)
 	if err != nil {
-		return nil, err
+		return nil, safeError(err)
 	}
 
 	var db *sql.DB
 	proxyClient, err := settings.ProxyClient(ctx)
 	if err != nil {
-		return nil, err
+		return nil, safeError(err)
 	}
 
 	connStr := config.ConnectionURL(secret, OauthToken)
@@ -233,19 +247,19 @@ func newDataSourceInstance(ctx context.Context, settings backend.DataSourceInsta
 	if config.EnableSecureSocksProxy {
 		pdialer, err := proxyClient.NewSecureSocksProxyContextDialer()
 		if err != nil {
-			return nil, fmt.Errorf("secure SOCKS proxy is enabled on datasource, but unavailable in Grafana runtime; verify secure_socks_datasource_proxy settings and feature toggles: %w", err)
+			return nil, safeError(fmt.Errorf("secure SOCKS proxy is enabled on datasource, but unavailable in Grafana runtime; verify secure_socks_datasource_proxy settings and feature toggles: %w", err))
 		}
 		dialer := &dialContextWrapper{Dialer: pdialer}
 		connector, err := vertica.NewConnector(connStr, dialer.DialContext)
 		if err != nil {
-			return nil, err
+			return nil, safeError(err)
 		}
 		db = sql.OpenDB(connector)
 
 	} else {
 		db, err = sql.Open("vertica", connStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open Vertica connection: %w", err)
+			return nil, safeError(fmt.Errorf("failed to open Vertica connection: %w", err))
 		}
 	}
 
@@ -267,47 +281,34 @@ func newDataSourceInstance(ctx context.Context, settings backend.DataSourceInsta
 // a datasource is working as expected.
 func (v *VerticaDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
 
-	log.DefaultLogger.Debug("Inside datasource.CheckHealth Function", "request", req)
+	log.DefaultLogger.Debug("Inside datasource.CheckHealth Function")
 
-	var status = backend.HealthStatusOk
 	connDB, err := v.GetVerticaDb(req.PluginContext)
 
 	if err != nil {
-		log.DefaultLogger.Error("unable to get sql.DB connection: " + err.Error())
-		return &backend.CheckHealthResult{
-			Status:  backend.HealthStatusError,
-			Message: fmt.Sprintf("%s", err),
-		}, nil
+		log.DefaultLogger.Error("unable to get sql.DB connection", "error", safeText(err.Error()))
+		return healthError(err), nil
 	}
 	// https://golang.org/pkg/database/sql/#DBStats
 	log.DefaultLogger.Debug(fmt.Sprintf("%s connection stats open connections =%d, InUse = %d, Ideal = %d", req.PluginContext.DataSourceInstanceSettings.Name, connDB.Stats().MaxOpenConnections, connDB.Stats().InUse, connDB.Stats().Idle))
 	connection, err := connDB.Conn(ctx)
 
 	if err != nil {
-		log.DefaultLogger.Info(fmt.Sprintf("CheckHealth :connection: %s", err))
-		return &backend.CheckHealthResult{
-			Status:  backend.HealthStatusError,
-			Message: fmt.Sprintf("%s", err),
-		}, nil
-	}
-
-	if err = connection.PingContext(context.Background()); err != nil {
-		log.DefaultLogger.Error("Error while connecting to the Vertica Database: " + err.Error())
-		return &backend.CheckHealthResult{
-			Status:  backend.HealthStatusError,
-			Message: fmt.Sprintf("%s", err),
-		}, nil
+		log.DefaultLogger.Info("CheckHealth connection failed", "error", safeText(err.Error()))
+		return healthError(err), nil
 	}
 	defer connection.Close()
+
+	if err = connection.PingContext(context.Background()); err != nil {
+		log.DefaultLogger.Error("Error while connecting to the Vertica Database", "error", safeText(err.Error()))
+		return healthError(err), nil
+	}
 
 	result, err := connection.QueryContext(ctx, "SELECT version()")
 
 	if err != nil {
-		log.DefaultLogger.Error("Health check error: " + err.Error())
-		return &backend.CheckHealthResult{
-			Status:  backend.HealthStatusError,
-			Message: fmt.Sprintf("%s", err),
-		}, nil
+		log.DefaultLogger.Error("Health check query failed", "error", safeText(err.Error()))
+		return healthError(err), nil
 	}
 
 	defer result.Close()
@@ -317,18 +318,16 @@ func (v *VerticaDatasource) CheckHealth(ctx context.Context, req *backend.CheckH
 	if result.Next() {
 		err = result.Scan(&queryResult)
 		if err != nil {
-			log.DefaultLogger.Error("Health check error: " + err.Error())
-			return &backend.CheckHealthResult{
-				Status:  backend.HealthStatusError,
-				Message: fmt.Sprintf("%s", err),
-			}, nil
+			log.DefaultLogger.Error("Health check scan failed", "error", safeText(err.Error()))
+			return healthError(err), nil
 		}
 	}
+	if err := result.Err(); err != nil {
+		log.DefaultLogger.Error("Health check row iteration failed", "error", safeText(err.Error()))
+		return healthError(err), nil
+	}
 
-	return &backend.CheckHealthResult{
-		Status:  status,
-		Message: fmt.Sprintf("Successfully connected to %s", queryResult),
-	}, nil
+	return healthSuccess(queryResult), nil
 }
 
 func (s *instanceSettings) Dispose() {
