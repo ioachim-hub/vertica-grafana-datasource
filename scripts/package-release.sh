@@ -23,6 +23,22 @@ if [[ -n "${supplied_tag}" && "${supplied_tag}" != "${expected_tag}" ]]; then
   exit 1
 fi
 
+source_date_epoch="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}"
+if [[ ! "${source_date_epoch}" =~ ^[0-9]+$ ]]; then
+  echo "SOURCE_DATE_EPOCH must be a non-negative integer." >&2
+  exit 1
+fi
+if (( source_date_epoch < 315532800 )); then
+  source_date_epoch=315532800
+fi
+readonly source_date_epoch
+export GRAFANA_BUILD_INFO_JSON
+GRAFANA_BUILD_INFO_JSON="$(
+  node -e \
+    'process.stdout.write(JSON.stringify({time: Number(process.argv[1]) * 1000, pluginID: process.argv[2], version: process.argv[3]}))' \
+    "${source_date_epoch}" "${plugin_id}" "${version}"
+)"
+
 yarn install --frozen-lockfile
 yarn build
 go run github.com/magefile/mage@v1.17.2 -v
@@ -64,15 +80,7 @@ readonly release_archive="${release_dir}/${plugin_id}-${version}.zip"
 
 cp -R dist "${staged_plugin}"
 
-# Normalize archive metadata so identical build output produces identical ZIPs.
-source_date_epoch="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}"
-if [[ ! "${source_date_epoch}" =~ ^[0-9]+$ ]]; then
-  echo "SOURCE_DATE_EPOCH must be a non-negative integer." >&2
-  exit 1
-fi
-if (( source_date_epoch < 315532800 )); then
-  source_date_epoch=315532800
-fi
+# Normalize archive metadata to match the deterministic backend build timestamp.
 find "${staged_plugin}" -exec touch -h -d "@${source_date_epoch}" {} +
 
 (
