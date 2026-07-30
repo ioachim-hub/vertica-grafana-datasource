@@ -14,6 +14,9 @@ import (
 	"reflect"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	"google.golang.org/protobuf/proto"
 )
 
 func getDataQuery(targetModel queryModel) backend.DataQuery {
@@ -163,4 +166,92 @@ func Test_Query(t *testing.T) {
 		})
 	}
 
+}
+
+func TestQueryEncodesBinaryResultBeforeProtobufSerialization(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	column := sqlmock.NewColumn("payload").OfType("VARBINARY", []byte{})
+	raw := []byte{0xff, 0xfe, 0x00, 0x80}
+	mock.ExpectQuery("SELECT payload").WillReturnRows(
+		sqlmock.NewRowsWithColumnDefinition(column).AddRow(raw),
+	)
+
+	response := (&VerticaDatasource{}).query(
+		context.Background(),
+		getDataQuery(queryModel{RawSQL: "SELECT payload", Format: "table"}),
+		db,
+	)
+
+	require.NoError(t, response.Error)
+	got, ok := response.Frames[0].Fields[0].At(0).(*string)
+	require.True(t, ok)
+	require.Equal(t, "fffe0080", *got)
+	queryResponse := &backend.QueryDataResponse{
+		Responses: backend.Responses{"A": response},
+	}
+	protobufResponse, err := backend.ToProto().QueryDataResponse(backend.DataFrameFormat_ARROW, queryResponse)
+	require.NoError(t, err)
+	_, err = proto.Marshal(protobufResponse)
+	require.NoError(t, err)
+}
+
+func TestQueryRepairsMalformedTextResultBeforeProtobufSerialization(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	column := sqlmock.NewColumn("label").OfType("VARCHAR", "")
+	raw := string([]byte{0xff, 'a'})
+	mock.ExpectQuery("SELECT label").WillReturnRows(
+		sqlmock.NewRowsWithColumnDefinition(column).AddRow(raw),
+	)
+
+	response := (&VerticaDatasource{}).query(
+		context.Background(),
+		getDataQuery(queryModel{RawSQL: "SELECT label", Format: "table"}),
+		db,
+	)
+
+	require.NoError(t, response.Error)
+	got, ok := response.Frames[0].Fields[0].At(0).(*string)
+	require.True(t, ok)
+	require.True(t, utf8.ValidString(*got))
+	require.Equal(t, "\uFFFDa", *got)
+	queryResponse := &backend.QueryDataResponse{
+		Responses: backend.Responses{"A": response},
+	}
+	protobufResponse, err := backend.ToProto().QueryDataResponse(backend.DataFrameFormat_ARROW, queryResponse)
+	require.NoError(t, err)
+	_, err = proto.Marshal(protobufResponse)
+	require.NoError(t, err)
+}
+
+func TestQueryRepairsMalformedColumnNameBeforeProtobufSerialization(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	column := sqlmock.NewColumn(string([]byte{0xff, 'c'})).OfType("VARCHAR", "")
+	mock.ExpectQuery("SELECT malformed_alias").WillReturnRows(
+		sqlmock.NewRowsWithColumnDefinition(column).AddRow("value"),
+	)
+
+	response := (&VerticaDatasource{}).query(
+		context.Background(),
+		getDataQuery(queryModel{RawSQL: "SELECT malformed_alias", Format: "table"}),
+		db,
+	)
+
+	require.NoError(t, response.Error)
+	require.Equal(t, "\uFFFDc", response.Frames[0].Fields[0].Name)
+	queryResponse := &backend.QueryDataResponse{
+		Responses: backend.Responses{"A": response},
+	}
+	protobufResponse, err := backend.ToProto().QueryDataResponse(backend.DataFrameFormat_ARROW, queryResponse)
+	require.NoError(t, err)
+	_, err = proto.Marshal(protobufResponse)
+	require.NoError(t, err)
 }

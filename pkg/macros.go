@@ -176,8 +176,8 @@ func replaceAllStringSubmatchFunc(re *regexp.Regexp, rawSQL string, repl func([]
 		replacement, err := repl(groups)
 
 		if err != nil {
-			log.DefaultLogger.Error("Error while replacing the string submatches: " + err.Error())
-			return "", err
+			log.DefaultLogger.Error("Error while replacing the string submatches", "error", safeText(err.Error()))
+			return "", safeError(err)
 		}
 
 		// Replace the macro with the replacement.
@@ -197,8 +197,8 @@ func sanitizeAndInterpolateMacros(rawSQL string, query backend.DataQuery) (strin
 	regex, err := regexp.Compile(macroPattern)
 
 	if err != nil {
-		log.DefaultLogger.Error("Error while compiling regex for macro: " + err.Error())
-		return rawSQL, err
+		log.DefaultLogger.Error("Error while compiling regex for macro", "error", safeText(err.Error()))
+		return rawSQL, safeError(err)
 	}
 
 	sql, err := replaceAllStringSubmatchFunc(regex, rawSQL, func(groups []string) (string, error) {
@@ -220,11 +220,11 @@ func sanitizeAndInterpolateMacros(rawSQL string, query backend.DataQuery) (strin
 		res, err := evaluateMacro(groups[1], args, query.TimeRange)
 
 		if err != nil {
-			return "", err
+			return "", safeError(err)
 		}
 
-		return res, err
+		return safeText(res), safeError(err)
 	})
 
-	return sql, err
+	return safeText(sql), safeError(err)
 }

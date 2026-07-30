@@ -35,6 +35,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -60,7 +61,10 @@ func (v *VerticaDatasource) query(ctx context.Context, query backend.DataQuery, 
 
 	// QueryArgs will fetch all the data of input sql query
 	var queryArgs queryModel
-	json.Unmarshal(query.JSON, &queryArgs)
+	if err := json.Unmarshal(query.JSON, &queryArgs); err != nil {
+		response.Error = safeError(err)
+		return response
+	}
 
 	// Check if the timeGroup macro is present in the rawSQL or not.
 	isTimeGroupMacro := strings.Contains(queryArgs.RawSQL, "$__timeGroup")
@@ -74,42 +78,52 @@ func (v *VerticaDatasource) query(ctx context.Context, query backend.DataQuery, 
 	}
 
 	queryArgs.RawSQL, response.Error = sanitizeAndInterpolateMacros(queryArgs.RawSQL, query)
+	response.Error = safeError(response.Error)
 	log.DefaultLogger.Debug("Sanitized final raw query: " + queryArgs.RawSQL)
 
 	if response.Error != nil {
-		log.DefaultLogger.Error("Error while sanitizing the query: " + response.Error.Error())
+		log.DefaultLogger.Error("Error while sanitizing the query", "error", response.Error.Error())
 		return response
 	}
 	connection, err := connDB.Conn(ctx)
 	if err != nil {
 		log.DefaultLogger.Error(fmt.Sprintf("queryData :connection: %s", err))
-		response.Error = err
+		response.Error = safeError(err)
 		return response
 	}
 	defer connection.Close()
 	// Excute the query
 	var rows *sql.Rows
 	rows, response.Error = connection.QueryContext(ctx, queryArgs.RawSQL)
+	response.Error = safeError(response.Error)
 	if response.Error != nil {
 		log.DefaultLogger.Error("Error while fetching the Query Result", response.Error)
 		return response
 	}
+	defer rows.Close()
 
 	// Add sql query in the data frame
 	frame.Meta = &data.FrameMeta{ExecutedQueryString: queryArgs.RawSQL}
 
 	// Defining the columns
-	columnTypes, _ := rows.ColumnTypes()
+	columnTypes, err := rows.ColumnTypes()
+	if err != nil {
+		response.Error = safeError(err)
+		return response
+	}
 	columnCount := len(columnTypes)
 	columns := make([]*sqlColumn, columnCount)
 
 	for idx := range columns {
-		columns[idx] = &sqlColumn{Name: columnTypes[idx].Name()}
+		columns[idx] = &sqlColumn{
+			Name: safeText(columnTypes[idx].Name()),
+			Type: columnTypes[idx].DatabaseTypeName(),
+		}
 
 		// If the column alias is metric then column type should not be from invalidMetricColumnTypes.
 		if columns[idx].Name == "metric" {
 			if contains(invalidMetricColumnTypes, strings.ToLower(columnTypes[idx].DatabaseTypeName())) {
-				response.Error = fmt.Errorf("Column metric must be of type UNKNOWN, TEXT, VARCHAR, CHAR")
+				response.Error = safeError(fmt.Errorf("Column metric must be of type UNKNOWN, TEXT, VARCHAR, CHAR"))
 				return response
 			}
 		}
@@ -149,13 +163,24 @@ func (v *VerticaDatasource) query(ctx context.Context, query backend.DataQuery, 
 		valuePointers := make([]interface{}, columnCount)
 
 		for i := 0; i < columnCount; i++ {
-			valuePointers[i] = &values[i]
+			switch strings.ToUpper(columnTypes[i].DatabaseTypeName()) {
+			case "BINARY", "VARBINARY", "LONG VARBINARY":
+				valuePointers[i] = new([]byte)
+			default:
+				valuePointers[i] = &values[i]
+			}
 		}
 
 		if err := rows.Scan(valuePointers...); err != nil {
 			log.DefaultLogger.Error("Could not scan row", "err", err)
-			response.Error = err
+			response.Error = safeError(err)
 			return response
+		}
+		for i := 0; i < columnCount; i++ {
+			switch strings.ToUpper(columnTypes[i].DatabaseTypeName()) {
+			case "BINARY", "VARBINARY", "LONG VARBINARY":
+				values[i] = *valuePointers[i].(*[]byte)
+			}
 		}
 
 		// Storing the entries as per the dataType of Column
@@ -176,9 +201,17 @@ func (v *VerticaDatasource) query(ctx context.Context, query backend.DataQuery, 
 			case float32, float64:
 				valueType = "FLOAT"
 				floatV = v.(float64)
-			case []byte, string:
+			case []byte:
 				valueType = "STRING"
-				stringV = v.(string)
+				switch strings.ToUpper(columnTypes[i].DatabaseTypeName()) {
+				case "BINARY", "VARBINARY", "LONG VARBINARY":
+					stringV = hex.EncodeToString(v)
+				default:
+					stringV = safeText(string(v))
+				}
+			case string:
+				valueType = "STRING"
+				stringV = safeText(v)
 			case time.Time:
 				valueType = "TIME"
 				timeV = v
@@ -360,7 +393,7 @@ func (v *VerticaDatasource) query(ctx context.Context, query backend.DataQuery, 
 				} else if valueType == "FLOAT" {
 					value = fmt.Sprintf("%f", floatV)
 				} else {
-					value = fmt.Sprintf("%v", values[i])
+					value = stringV
 				}
 
 				if valueType == "NULL" {
@@ -391,6 +424,10 @@ func (v *VerticaDatasource) query(ctx context.Context, query backend.DataQuery, 
 
 		}
 
+	}
+	if err := rows.Err(); err != nil {
+		response.Error = safeError(err)
+		return response
 	}
 
 	// Appending all the fetched data into Frames
@@ -430,8 +467,8 @@ func (v *VerticaDatasource) query(ctx context.Context, query backend.DataQuery, 
 	} else {
 		wideFrame, err := data.LongToWide(frame, nil)
 		if err != nil {
-			log.DefaultLogger.Error("Error while rendering the time-series data" + err.Error())
-			response.Error = err
+			log.DefaultLogger.Error("Error while rendering the time-series data", "error", safeText(err.Error()))
+			response.Error = safeError(err)
 			return response
 		}
 		response.Frames = append(response.Frames, wideFrame)
