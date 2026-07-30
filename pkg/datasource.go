@@ -37,14 +37,15 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
-
+	"golang.org/x/net/proxy"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
-	_ "github.com/vertica/vertica-sql-go"
+	vertica "github.com/vertica/vertica-sql-go"
 )
 
 func newDatasource() datasource.ServeOpts {
@@ -58,6 +59,30 @@ func newDatasource() datasource.ServeOpts {
 	return datasource.ServeOpts{
 		QueryDataHandler:   ds,
 		CheckHealthHandler: ds,
+	}
+}
+
+type dialContextWrapper struct {
+	proxy.Dialer
+}
+
+func (d *dialContextWrapper) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	type result struct {
+		conn net.Conn
+		err  error
+	}
+	ch := make(chan result, 1)
+
+	go func() {
+		c, err := d.Dialer.Dial(network, addr)
+		ch <- result{c, err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-ch:
+		return res.conn, res.err
 	}
 }
 
@@ -84,6 +109,7 @@ func (v *VerticaDatasource) GetVerticaDb(pluginContext backend.PluginContext) (*
 
 }
 
+
 type configArgs struct {
 	User                   string `json:"user"`
 	Database               string `json:"database"`
@@ -91,22 +117,24 @@ type configArgs struct {
 	URL                    string `json:"url"`
 	UseBackupServer        bool   `json:"useBackupserver"`
 	BackupServerNode       string `json:"backupServerNode"`
+	OauthToken			   string `json:"OauthToken"`
 	UsePreparedStmts       bool   `json:"usePreparedStatements"`
 	UseLoadBalancer        bool   `json:"useLoadBalancer"`
 	MaxOpenConnections     int    `json:"maxOpenConnections"`
 	MaxIdealConnections    int    `json:"maxIdealConnections"`
 	MaxConnectionIdealTime int    `json:"maxConnectionIdealTime"`
+	EnableSecureSocksProxy bool   `json:"enableSecureSocksProxy,omitempty"`
 }
 
 // ConnectionURL , generates a vertica connection URL for configArgs. Requires password as input.
-func (config *configArgs) ConnectionURL(password string) string {
+func (config *configArgs) ConnectionURL(password string , OauthToken string) string {
 	var tlsmode string
 	if config.TLSMode == "" {
 		tlsmode = "none"
 	} else {
 		tlsmode = config.TLSMode
 	}
-	return fmt.Sprintf("vertica://%s:%s@%s/%s?use_prepared_statements=%d&connection_load_balance=%d&tlsmode=%s&backup_server_node=%s", config.User, password, config.URL, config.Database, boolTouint8(config.UsePreparedStmts), boolTouint8(config.UseLoadBalancer), tlsmode, config.BackupServerNode)
+	return fmt.Sprintf("vertica://%s:%s@%s/%s?use_prepared_statements=%d&connection_load_balance=%d&tlsmode=%s&backup_server_node=%s&oauth_access_token=%s", config.User, password, config.URL, config.Database, boolTouint8(config.UsePreparedStmts), boolTouint8(config.UseLoadBalancer), tlsmode, config.BackupServerNode, OauthToken)
 }
 
 type queryModel struct {
@@ -184,21 +212,44 @@ type instanceSettings struct {
 }
 
 // Create new datasource.
-func newDataSourceInstance(_ context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	// func newDataSourceInstance(setting backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+func newDataSourceInstance(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+// func newDataSourceInstance(setting backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 	var config configArgs
 	secret := settings.DecryptedSecureJSONData["password"]
-
+	OauthToken := settings.DecryptedSecureJSONData["OauthToken"]
+	
 	err := json.Unmarshal(settings.JSONData, &config)
 	if err != nil {
 		return nil, err
 	}
-	connStr := config.ConnectionURL(secret)
-	db, err := sql.Open("vertica", connStr)
+   
+	var db *sql.DB
+	proxyClient, err := settings.ProxyClient(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+	connStr := config.ConnectionURL(secret,OauthToken)
+	
+	if config.EnableSecureSocksProxy {
+		pdialer, err := proxyClient.NewSecureSocksProxyContextDialer()
+		if err != nil {
+			return nil, fmt.Errorf("secure SOCKS proxy is enabled on datasource, but unavailable in Grafana runtime; verify secure_socks_datasource_proxy settings and feature toggles: %w", err)
+		}
+	dialer := &dialContextWrapper{Dialer: pdialer}
+	connector, err := vertica.NewConnector(connStr,dialer.DialContext)
 	if err != nil {
 		return nil, err
 	}
-
+	db = sql.OpenDB(connector)
+		
+	} else {
+		db, err = sql.Open("vertica", connStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open Vertica connection: %w", err)
+		}
+	} 
+	
 	db.SetMaxOpenConns(config.MaxOpenConnections)
 	db.SetMaxIdleConns(config.MaxIdealConnections)
 	db.SetConnMaxIdleTime(time.Minute * time.Duration(config.MaxConnectionIdealTime))
@@ -208,7 +259,7 @@ func newDataSourceInstance(_ context.Context, settings backend.DataSourceInstanc
 		Db:         db,
 		Name:       settings.Name,
 	}, nil
-
+	
 }
 
 // CheckHealth handles health checks sent from Grafana to the plugin.

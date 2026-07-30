@@ -1,4 +1,5 @@
-import { DataQuery, DataSourceJsonData, SelectableValue } from '@grafana/data';
+import { DataQuery } from '@grafana/schema';
+import { DataSourceJsonData, SelectableValue } from '@grafana/data';
 
 export interface QueryPart {
   type: string;
@@ -61,6 +62,11 @@ export interface MyDataSourceOptions extends DataSourceJsonData {
   useBackupserver: boolean;
 
   backupServerNode: string;
+
+  useOauth: boolean;
+
+  enableSecureSocksProxy?: boolean;
+
 }
 
 /**
@@ -68,6 +74,7 @@ export interface MyDataSourceOptions extends DataSourceJsonData {
  */
 export interface MySecureJsonData {
   password?: string;
+  OauthToken?: string;
 }
 
 export const FIELD_TYPES = {
