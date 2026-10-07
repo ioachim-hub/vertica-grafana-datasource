@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.4 (2026-10-07)
+
+- Based on upstream Vertica datasource `v3.2.1`.
+- Built with Go 1.26.8 to fix standard library vulnerabilities GO-2026-6090 and GO-2026-5972.
+- Bumped `google.golang.org/grpc` to v1.83.2 (GO-2026-6443, GO-2026-6348) and OpenTelemetry to v1.47.0 (GO-2026-6505).
+- Bumped `grafana-plugin-sdk-go` to v0.296.5 and refreshed other Go dependencies.
+
 ## 3.2.3 (2026-07-30)
 
 - Based on upstream Vertica datasource `v3.2.1`.
