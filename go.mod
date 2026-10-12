@@ -1,6 +1,6 @@
 module github.com/grafana/grafana-starter-datasource-backend
 
-go 1.26.8
+go 1.26.9
 
 require (
 	bou.ke/monkey v1.0.2
@@ -8,7 +8,7 @@ require (
 	github.com/grafana/grafana-plugin-sdk-go v0.296.5
 	github.com/stretchr/testify v1.12.1
 	github.com/vertica/vertica-sql-go v1.3.4-0.20250904102752-dcec3142b479
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	google.golang.org/protobuf v1.36.12
 )
 
