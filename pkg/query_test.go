@@ -255,3 +255,16 @@ func TestQueryRepairsMalformedColumnNameBeforeProtobufSerialization(t *testing.T
 	_, err = proto.Marshal(protobufResponse)
 	require.NoError(t, err)
 }
+
+func Test_QueryModelAcceptsGrafanaDatasourceID(t *testing.T) {
+	// Grafana's frontend adds the deprecated numeric datasourceId to every backend query.
+	raw := []byte(`{"refId":"A","datasourceId":308,"datasource":{"type":"vertica-grafana-datasource","uid":"abc"},"format":"table","rawSql":"SELECT 1"}`)
+
+	var q queryModel
+	if err := json.Unmarshal(raw, &q); err != nil {
+		t.Fatalf("unmarshal query model: %v", err)
+	}
+	if q.RawSQL != "SELECT 1" || q.Format != "table" || q.RefID != "A" {
+		t.Fatalf("unexpected query model: %+v", q)
+	}
+}

@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.2.6 (2026-10-13)
+
+- Based on upstream Vertica datasource `v3.2.1`.
+- Fix query decoding failing with `cannot unmarshal number into Go struct field queryModel.datasourceId of type string` by dropping the unused `datasourceId` field (Grafana sends it as a number).
+- Bump `grafana-plugin-sdk-go` to v0.297.0, `google.golang.org/grpc` to v1.84.0 and refresh related Go dependencies.
+
 ## 3.2.5 (2026-10-12)
 
 - Based on upstream Vertica datasource `v3.2.1`.

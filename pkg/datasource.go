@@ -140,10 +140,9 @@ func (config *configArgs) ConnectionURL(password string, OauthToken string) stri
 }
 
 type queryModel struct {
-	DataSourceID string `json:"datasourceId"`
-	Format       string `json:"format"`
-	RawSQL       string `json:"rawSql"`
-	RefID        string `json:"refId"`
+	Format string `json:"format"`
+	RawSQL string `json:"rawSql"`
+	RefID  string `json:"refId"`
 }
 
 type sqlColumn struct {
