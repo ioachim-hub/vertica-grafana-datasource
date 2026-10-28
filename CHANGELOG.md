@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.2.7 (2026-10-28)
+
+- Based on upstream Vertica datasource `v3.2.1`.
+- Build with Go 1.26.10 to fix CVE-2026-111943 in system root certificate handling.
+- Upgrade `golang.org/x/net` to v0.62.0 to fix CVE-2026-97045 and CVE-2026-78661 in the HTML parser.
+
 ## 3.2.6 (2026-10-13)
 
 - Based on upstream Vertica datasource `v3.2.1`.
