@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.2.8 (2026-11-17)
+
+- Based on upstream Vertica datasource `v3.2.1`.
+- Build with Go 1.26.11 to fix CVE-2026-97054 (GO-2026-6859), an HTTP/1 server crash from a `net/http` MaxBytesReader header race.
+
 ## 3.2.7 (2026-11-10)
 
 - Based on upstream Vertica datasource `v3.2.1`.
