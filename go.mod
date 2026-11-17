@@ -1,6 +1,6 @@
 module github.com/grafana/grafana-starter-datasource-backend
 
-go 1.26.10
+go 1.26.11
 
 require (
 	bou.ke/monkey v1.0.2
